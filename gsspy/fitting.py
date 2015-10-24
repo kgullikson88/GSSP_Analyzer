@@ -8,7 +8,7 @@ import subprocess
 from astropy.io import fits
 from astropy import time
 import DataStructures
-from ._utils import combine_orders
+from ._utils import combine_orders, read_grid_points
 from .analyzer import GSSP_Analyzer
 import logging
 
@@ -84,6 +84,7 @@ class GSSP_Fitter(object):
         self.gssp_exe = os.path.abspath(gssp_exe)
         self.abundance_table = abund_tab
         self.model_dir = models_dir
+        self.gssp_gridpoints = read_grid_points(models_dir)
 
 
     def _run_gssp(self, teff_lims=(7000, 30000), teff_step=1000, 
@@ -199,8 +200,36 @@ class GSSP_Fitter(object):
 
         # If we get here, we should restrict the grid near the 
         # best solution and fit again
-        #teff_lims = 
-        raise NotImplementedError
+        teff_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_Teff'],
+                                             upper=best_pars['1sig_CI_upper_Teff'],
+                                             self.grid.teff)
+        logg_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_logg'],
+                                             upper=best_pars['1sig_CI_upper_logg'],
+                                             self.grid.logg)
+        feh_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_feh'],
+                                            upper=best_pars['1sig_CI_upper_feh'],
+                                            self.grid.feh)
+        vsini_lower = best_pars.best_vsini*(1-1.5) + 1.5*best_pars.1sig_CI_lower_vsini
+        vsini_upper = best_pars.best_vsini*(1-1.5) + 1.5*best_pars.1sig_CI_upper_vsini
+        vsini_lims = (max(10, vsini_lower), min(400, vsini_upper))
+        vsini_step = max(self.vsini_minstep, (vsini_lims[1] - vsini_lims[0])/10)
+        vmicro_lims = (best_pars.best_vmicro, best_pars.best_vmicro)
+
+        # Run GSSP on the refined grid
+        self._run_gssp(teff_lims=teff_lims, teff_step=self.teff_minstep, 
+                       logg_lims=logg_lims, logg_step=self.logg_minstep,
+                       feh_lims=feh_lims, feh_step=feh_minstep, 
+                       vsini_lims=vsini_lims, vsini_step=round(vsini_step), 
+                       vmicro_lims=vmicro_lims, vmicro_step=vmicro_step, 
+                       R=R, ncores=ncores)
+
+        best_pars, figs = GSSP_Analyzer(output_dir).estimate_best_parameters()
+        for par in figs.keys():
+            fig = figs[par]
+            fig.savefig(os.path.join(output_dir, '{}_fine.pdf'.format(par)))
+            fig.close()
+
+        return best_pars
 
 
 
@@ -211,6 +240,21 @@ class GSSP_Fitter(object):
         """
         return lims, max(step, minstep)
 
+
+    def _get_refined_limits(lower, upper, values):
+        """ 
+        Get the items in the 'values' array that are just
+        less than lower and just more than upper.
+        """
+        unique_values = sorted(np.unique(values))
+        l_idx = np.searchsorted(unique_values, lower, side='left')
+        r_idx = np.searchsorted(unique_values, upper, side='right')
+
+        if l_idx > 0:
+            l_idx -= 1
+        if r_idx < len(unique_values) - 1:
+            r_idx += 1
+        return unique_values[l_idx], unique_values[r_idx]
 
 
     def _read_fits_file(self, fname):
