@@ -4,7 +4,7 @@ import logging
 import numpy as np
 
 # Default labels for the Chi^2 output table
-CHI2_LABELS = ['feh', 'Teff', 'logg', 'micro_turb', 'vsini', 'dilution', 
+CHI2_LABELS = ['feh', 'Teff', 'logg', 'micro_turb', 'vsini', 
                'chi2_inter', 'contin_factor', 'chi2', 'chi2_1sig']
 
 # Which labels are parameters (again, default)
@@ -82,10 +82,14 @@ def estimate_best_parameters(grid, best_grid_pars=None):
         par_dependence = grid[cond][[par, 'chi2']]
 
         # Fit the dependence to a polynomial
+        print(par_dependence)
         polypars = np.polyfit(par_dependence[par], par_dependence['chi2'] - best_grid_pars['chi2_1sig'], 2)
+        print(polypars)
         chi2_fcn = np.poly1d(polypars)
         roots = sorted(np.roots(polypars))
+        print(roots)
         minimum = get_minimum(chi2_fcn, search_range=roots)
+        print(minimum)
         if len(minimum) == 1:
             minimum = minimum[0]
         else:
