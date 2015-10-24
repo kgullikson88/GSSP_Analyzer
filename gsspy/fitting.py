@@ -8,7 +8,7 @@ import subprocess
 from astropy.io import fits
 from astropy import time
 import DataStructures
-from ._utils import combine_orders, read_grid_points
+from ._utils import combine_orders, read_grid_points, ensure_dir
 from .analyzer import GSSP_Analyzer
 import logging
 
@@ -116,7 +116,8 @@ class GSSP_Fitter(object):
 
         # Move the output directory to a new name that won't be overridden
         output_dir = '{}_output'.format(self.output_basename)
-        subprocess.check_call(['mv', 'output_files', '{}'.format(output_dir)])
+        ensure_dir(output_dir)
+        subprocess.check_call(['mv', 'output_files/*', '{}/'.format(output_dir)])
         return
 
 
@@ -214,6 +215,15 @@ class GSSP_Fitter(object):
         vsini_lims = (max(10, vsini_lower), min(400, vsini_upper))
         vsini_step = max(self.vsini_minstep, (vsini_lims[1] - vsini_lims[0])/10)
         vmicro_lims = (best_pars.best_vmicro, best_pars.best_vmicro)
+
+        # Rename the files in the output directory so they don't get overwritten
+        file_list = ['CCF.dat', 'Chi2_table.dat', 
+                     'Observed_spectrum.dat', 'Synthetic_best_fit.rgs']
+        ensure_dir(os.path.join(output_dir, 'course_output'))
+        for f in file_list:
+            original_fname = os.path.join(output_dir, f)
+            new_fname = os.path.join(output_dir, 'course_output', f)
+            subprocess.check_call(['mv', original_fname, new_fname])
 
         # Run GSSP on the refined grid
         self._run_gssp(teff_lims=teff_lims, teff_step=self.teff_minstep, 

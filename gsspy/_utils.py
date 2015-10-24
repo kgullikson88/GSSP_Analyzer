@@ -8,6 +8,7 @@ import glob
 import logging
 import pandas as pd
 
+
 def combine_orders(xypts, snr=None, xspacing=None, numpoints=None, interp_order=3):
     """
     Function to combine a list of xypoints into a single
@@ -86,6 +87,7 @@ def get_minimum(poly, search_range=None):
     test = poly.deriv(2)(r_crit)  # Find the second derivative at each critical point
     return r_crit[test > 0]
 
+
 def read_grid_points(basename):
     """ Find what grid points are available. Assumes a very strict naming scheme!
     """
@@ -120,4 +122,12 @@ def read_grid_points(basename):
 
 
 
-
+def ensure_dir(f):
+    """
+      Ensure that a directory exists. Create if it doesn't
+    """
+    d = os.path.dirname(f)
+    if d == "":
+        d = f
+    if not os.path.exists(d):
+        os.makedirs(d)
