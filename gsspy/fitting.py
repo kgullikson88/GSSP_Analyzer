@@ -73,21 +73,26 @@ class GSSP_Fitter(object):
         self.jd = jd
         self.starname = star
         self.output_basename = output_basename
-        self.gssp_exe = gssp_exe
+        self.gssp_exe = os.path.abspath(gssp_exe)
         self.abundance_table = abund_tab
         self.model_dir = models_dir
 
 
     def _coarse_fit(self, teff_lims=(7000, 30000), teff_step=1000, 
                     logg_lims=(3.0, 4.5), logg_step=0.5, 
-                    feh_lims=(-1.0, 0.5), feh_step=0.5,
-                    vsini_lims=(50, 350), vsini_step=50
+                    feh_lims=(-0.5, 0.5), feh_step=0.5,
+                    vsini_lims=(50, 350), vsini_step=50,
                     vmicro_lims=(1, 5), vmicro_step=1, 
-                    R=None, ncores=1):
+                    R=80000, ncores=1):
         """
         Coarsely fit the parameters Teff, log(g), and [Fe/H].
         """
         # First, make the input file for GSSP
+        teff_lims = (min(teff_lims), max(teff_lims))
+        logg_lims = (min(logg_lims), max(logg_lims))
+        feh_lims = (min(feh_lims), max(feh_lims))
+        vsini_lims = (min(vsini_lims), max(vsini_lims))
+        vmicro_lims = (min(vmicro_lims), max(vmicro_lims))
         inp_file=self._make_input_file(teff_lims=teff_lims, teff_step=teff_step, 
                               logg_lims=logg_lims, logg_step=logg_step,
                               feh_lims=feh_lims, feh_step=feh_step, 
@@ -97,7 +102,7 @@ class GSSP_Fitter(object):
 
         # Run GSSP
         subprocess.check_call(['mpirun', '-n', '{}'.format(ncores), 
-                               './{}'.format(self.gssp_exe), 
+                               '{}'.format(self.gssp_exe), 
                                '{}'.format(inp_file)])
 
         # Move the output directory to a new name that won't be overridden
@@ -142,13 +147,13 @@ class GSSP_Fitter(object):
                                                          vsini_step,
                                                          vsini_lims[1])
 
-        output_string += " skip 0.03 0.02 0.07  !dilution factor\n"
+        output_string += "skip 0.03 0.02 0.07  !dilution factor\n"
 
         output_string += 'skip {:.1f} {:.1f} {:.1f}\n'.format(feh_lims[0],
                                                               feh_step,
                                                               feh_lims[1])
         
-        output_string += 'He 0.04 0.005 0.06   ! Individual abundance\n')
+        output_string += 'He 0.04 0.005 0.06   ! Individual abundance\n'
 
         output_string += '0.0 {:.0f}\n'.format(resolution)
 
@@ -164,7 +169,8 @@ class GSSP_Fitter(object):
 
         output_string += '0.5 0.99 0.0 adjust ! RV determination stuff\n'
 
-        output_string += '{.1f} {:.1f}\n'.format(data.x[0]-10, data.x[-1]+10)
+        xmin, xmax = self.data.x[0]-10, self.data.x[-1]+10
+        output_string += '{:.1f} {:.1f}\n'.format(xmin, xmax)
 
         outfilename = '{}.inp'.format(self.output_basename)
         with open(outfilename, 'w') as outfile:
