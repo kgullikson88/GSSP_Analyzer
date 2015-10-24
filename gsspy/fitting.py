@@ -10,6 +10,7 @@ from astropy import time
 import DataStructures
 from ._utils import combine_orders
 from .analyzer import GSSP_Analyzer
+import logging
 
 home = os.environ['HOME']
 GSSP_EXE = '{}/Applications/GSSP/GSSP_single/GSSP_single'.format(home)
@@ -17,6 +18,11 @@ GSSP_ABUNDANCE_TABLES = '{}/Applications/GSSPAbundance_Tables/'.format(home)
 GSSP_MODELS = '/media/ExtraSpace/GSSP_Libraries/LLmodels/'
 
 class GSSP_Fitter(object):
+    teff_minstep = 100
+    logg_minstep = 0.1
+    feh_minstep = 0.1
+    vsini_minstep = 10
+    vmicro_minstep = 0.1
     def __init__(self, filename, gssp_exe=None, abund_tab=None, models_dir=None):
         """
         A python wrapper to the GSSP code (must already be installed)
@@ -70,6 +76,7 @@ class GSSP_Fitter(object):
                    np.transpose((combined.x, combined.y)),
                    fmt='%.10f')
 
+        # Save some instance variables
         self.data = combined 
         self.jd = jd
         self.starname = star
@@ -79,12 +86,12 @@ class GSSP_Fitter(object):
         self.model_dir = models_dir
 
 
-    def _coarse_fit(self, teff_lims=(7000, 30000), teff_step=1000, 
-                    logg_lims=(3.0, 4.5), logg_step=0.5, 
-                    feh_lims=(-0.5, 0.5), feh_step=0.5,
-                    vsini_lims=(50, 350), vsini_step=50,
-                    vmicro_lims=(1, 5), vmicro_step=1, 
-                    R=80000, ncores=1):
+    def _run_gssp(self, teff_lims=(7000, 30000), teff_step=1000, 
+                  logg_lims=(3.0, 4.5), logg_step=0.5, 
+                  feh_lims=(-0.5, 0.5), feh_step=0.5,
+                  vsini_lims=(50, 350), vsini_step=50,
+                  vmicro_lims=(1, 5), vmicro_step=1, 
+                  R=80000, ncores=1):
         """
         Coarsely fit the parameters Teff, log(g), and [Fe/H].
         """
@@ -107,10 +114,102 @@ class GSSP_Fitter(object):
                                '{}'.format(inp_file)])
 
         # Move the output directory to a new name that won't be overridden
-        output_dir = '{}_coarse_output'.format(self.output_basename)
+        output_dir = '{}_output'.format(self.output_basename)
         subprocess.check_call(['mv', 'output_files', '{}'.format(output_dir)])
+        return
 
 
+    def fit(self, teff_lims=(7000, 30000), teff_step=1000, 
+            logg_lims=(3.0, 4.5), logg_step=0.5, 
+            feh_lims=(-0.5, 0.5), feh_step=0.5,
+            vsini_lims=(50, 350), vsini_step=50,
+            vmicro_lims=(1, 5), vmicro_step=1, 
+            R=80000, ncores=1, refine=True):
+        """ 
+        Fit the stellar parameters with GSSP 
+
+        Parameters:
+        =============
+        par_lims:     iterable with (at least) two objects
+                      The limits on the given parameter. 'par' can be one of:
+
+                        1. teff:   The effective temperature
+                        2. logg:   The surface gravity
+                        3. feh:    The metallicity [Fe/H]
+                        4. vsini:  The rotational velocity
+                        5. vmicro: The microturbulent velocity
+
+                      The default values are a very large, very course grid.
+                      Consider refining based on spectral type first!
+
+        par_step:     float
+                      The initial step size to take in the given parameter.
+                      'par' can be from the same list as above.
+
+        R:            float
+                      The spectrograph resolving power (lambda/delta-lambda)
+
+        ncores:       integer, default=1
+                      The number of cores to use in the GSSP run.
+
+        refine:       boolean
+                      Should we run GSSP again with a smaller grid after the 
+                      initial fit? If yes, the best answers will probably be 
+                      better.
+
+        Returns:
+        =========
+        A pd.Series object with the best parameters 
+        """
+        # Check that the inputs are reasonable
+        teff_lims, teff_step = self._check_grid(teff_lims,
+                                                teff_step,
+                                                self.teff_minstep)
+        logg_lims, logg_step = self._check_grid(logg_lims,
+                                                logg_step,
+                                                self.logg_minstep)
+        feh_lims, feh_step = self._check_grid(feh_lims,
+                                              feh_step,
+                                              self.feh_minstep)
+        vsini_lims, vsini_step = self._check_grid(vsini_lims,
+                                                  vsini_step,
+                                                  self.vsini_minstep)
+        vmicro_lims, vmicro_step = self._check_grid(vmicro_lims,
+                                                    vmicro_step,
+                                                    self.vmicro_minstep)
+
+        # Run GSSP
+        self._run_gssp(teff_lims=teff_lims, teff_step=teff_step, 
+                       logg_lims=logg_lims, logg_step=logg_step,
+                       feh_lims=feh_lims, feh_step=feh_step, 
+                       vsini_lims=vsini_lims, vsini_step=vsini_step, 
+                       vmicro_lims=vmicro_lims, vmicro_step=vmicro_step, 
+                       R=R, ncores=ncores)
+
+        # Look at the output and save the figures
+        output_dir = '{}_output'.format(self.output_basename)
+        best_pars, figs = GSSP_Analyzer(output_dir).estimate_best_parameters()
+        for par in figs.keys():
+            fig = figs[par]
+            fig.savefig(os.path.join(output_dir, '{}_course.pdf'.format(par)))
+            fig.close()
+
+        if not refine:
+            return best_pars 
+
+        # If we get here, we should restrict the grid near the 
+        # best solution and fit again
+        #teff_lims = 
+        raise NotImplementedError
+
+
+
+
+    def _check_grid(self, lims, step, minstep):
+        """ Check that the input grid is calculable
+        TODO: Check the grid limits!
+        """
+        return lims, max(step, minstep)
 
 
 
