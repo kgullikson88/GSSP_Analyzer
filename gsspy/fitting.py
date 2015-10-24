@@ -9,6 +9,7 @@ from astropy.io import fits
 from astropy import time
 import DataStructures
 from ._utils import combine_orders
+from .analyzer import GSSP_Analyzer
 
 home = os.environ['HOME']
 GSSP_EXE = '{}/Applications/GSSP/GSSP_single/GSSP_single'.format(home)
@@ -169,7 +170,7 @@ class GSSP_Fitter(object):
 
         output_string += '0.5 0.99 0.0 adjust ! RV determination stuff\n'
 
-        xmin, xmax = self.data.x[0]-10, self.data.x[-1]+10
+        xmin, xmax = self.data.x[0]-1, self.data.x[-1]+1
         output_string += '{:.1f} {:.1f}\n'.format(xmin, xmax)
 
         outfilename = '{}.inp'.format(self.output_basename)
