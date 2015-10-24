@@ -66,7 +66,7 @@ class GSSP_Analyzer(object):
         best_grid_pars = self._get_best_grid_pars()
 
         parameters = [p for p in self.par_labels if p in self.chi2_df.columns]
-        figures = []
+        figures = {}
         for i, par in enumerate(parameters):
             logging.debug('Slicing to find best {}'.format(par))
 
@@ -108,7 +108,7 @@ class GSSP_Analyzer(object):
             best_grid_pars['1sig_CI_lower_{}'.format(par)] = min(roots)
             best_grid_pars['1sig_CI_upper_{}'.format(par)] = max(roots)
 
-            figures.append(fig)
+            figures[par] = fig
 
         return best_grid_pars, figures   
 
@@ -120,7 +120,7 @@ class GSSP_Analyzer(object):
         model_fname = os.path.join(self.basedir, 'Synthetic_best_fit.rgs')
         obs_spec = np.loadtxt(obs_fname, unpack=True)
         model_spec = np.loadtxt(model_fname, usecols=(0,1), unpack=True)
-        
+
         fig, ax = plt.subplots(1, 1, figsize=(12,7))
         ax.plot(obs_spec[0], obs_spec[1], 'k-', alpha=0.7, label='Observed spectrum')
         ax.plot(model_spec[0], model_spec[1], 'r-', alpha=0.8, label='Model Spectrum')
