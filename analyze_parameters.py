@@ -1,3 +1,6 @@
+import warnings
+warnings.warn('Use gsspy.analyzer.GSSP_Analyzer instead!', DeprecationWarning)
+
 import pandas as pd 
 import sys
 import logging
