@@ -3,6 +3,10 @@ from __future__ import print_function, division, absolute_import
 import numpy as np 
 import DataStructures
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
+import os
+import glob
+import logging
+import pandas as pd
 
 def combine_orders(xypts, snr=None, xspacing=None, numpoints=None, interp_order=3):
     """
@@ -81,3 +85,39 @@ def get_minimum(poly, search_range=None):
 
     test = poly.deriv(2)(r_crit)  # Find the second derivative at each critical point
     return r_crit[test > 0]
+
+def read_grid_points(basename):
+    """ Find what grid points are available. Assumes a very strict naming scheme!
+    """
+    # First level: metallicities and microturbulent velocities
+    top_dirs = [os.path.basename(d) for d in os.listdir(basename) if d.startswith('l')]
+    teff_list = []
+    logg_list = []
+    feh_list = []
+    vmicro_list = []
+    model_list = []
+    for directory in top_dirs:
+        sign = -1 if directory[1] == 'm' else 1
+        feh = sign * float(directory[2:4])/10
+        vmicro = float(directory.split('k')[-1])
+
+        # 2nd level: Individual models
+        for model in glob.glob(os.path.join(basename, directory, '*.mod')):
+            sections = os.path.basename(model).split('_')
+            teff = float(sections[1])
+            logg = float(sections[2])/100
+            teff_list.append(teff)
+            logg_list.append(logg)
+            feh_list.append(feh)
+            vmicro_list.append(vmicro)
+            model_list.append(os.path.join(basename, directory, model))
+
+    return pd.DataFrame(data=dict(teff=teff_list,
+                                  logg=logg_list,
+                                  feh=feh_list,
+                                  vmicro=vmicro_list,
+                                  filename=model_list))
+
+
+
+
