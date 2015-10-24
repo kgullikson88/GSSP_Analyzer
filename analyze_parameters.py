@@ -2,6 +2,8 @@ import pandas as pd
 import sys
 import logging
 import numpy as np
+import matplotlib.pyplot as plt 
+import os
 
 # Default labels for the Chi^2 output table
 CHI2_LABELS = ['feh', 'Teff', 'logg', 'micro_turb', 'vsini', 
@@ -66,7 +68,6 @@ def estimate_best_parameters(grid, best_grid_pars=None):
     if best_grid_pars is None:
         best_grid_pars = get_best_grid_pars(grid)
 
-    import matplotlib.pyplot as plt 
     fig, axes = plt.subplots(3, 2)
     axes = axes.flatten()
     parameters = [p for p in best_grid_pars.index if 'chi2' not in p]
@@ -80,16 +81,14 @@ def estimate_best_parameters(grid, best_grid_pars=None):
         # Get the chi^2 dependence on the current parameter alone
         cond = np.all([grid[p] == best_grid_pars[p] for p in other_pars], axis=0)
         par_dependence = grid[cond][[par, 'chi2']]
+        if len(par_dependence) < 2:
+            continue
 
         # Fit the dependence to a polynomial
-        print(par_dependence)
         polypars = np.polyfit(par_dependence[par], par_dependence['chi2'] - best_grid_pars['chi2_1sig'], 2)
-        print(polypars)
         chi2_fcn = np.poly1d(polypars)
         roots = sorted(np.roots(polypars))
-        print(roots)
         minimum = get_minimum(chi2_fcn, search_range=roots)
-        print(minimum)
         if len(minimum) == 1:
             minimum = minimum[0]
         else:
@@ -111,6 +110,7 @@ def estimate_best_parameters(grid, best_grid_pars=None):
 
 
     plt.tight_layout()
+    plt.show()
     return best_grid_pars
 
 
@@ -137,6 +137,22 @@ def get_minimum(poly, search_range=None):
 
     test = poly.deriv(2)(r_crit)  # Find the second derivative at each critical point
     return r_crit[test > 0]
+
+
+def plot_best_model(basename):
+    obs_spec = np.loadtxt(os.path.join(basename, 'Observed_spectrum.dat'), unpack=True)
+    model_spec = np.loadtxt(os.path.join(basename, 'Synthetic_best_fit.rgs'), usecols=(0,1), unpack=True)
+    fig, ax = plt.subplots(1, 1, figsize=(12,7))
+    ax.plot(obs_spec[0], obs_spec[1], 'k-', alpha=0.7, label='Observed spectrum')
+    ax.plot(model_spec[0], model_spec[1], 'r-', alpha=0.8, label='Model Spectrum')
+    ax.set_xlabel('Wavelength ($\AA$)')
+    ax.set_ylabel('Normalized Flux')
+
+    leg = ax.legend(loc='best', fancybox=True)
+    leg.get_frame().set_alpha(0.5)
+
+    plt.show()
+
 
 
 
