@@ -56,3 +56,28 @@ def combine_orders(xypts, snr=None, xspacing=None, numpoints=None, interp_order=
     full_array.err = np.sqrt(full_array.err)
     full_array.y[numvals > 0] /= numvals[numvals > 0]
     return full_array
+
+
+def get_minimum(poly, search_range=None):
+    """ Get the minimum values of a polynomial.
+
+    parameters:
+    ===========
+    - poly:   np.poly1d instance
+    - search_range: list of size 2
+                    Should contain the minimum and maximum search range in index 0 and 1 (respectively)
+
+    returns:
+    ========
+    A numpy.ndarray with the minimum values
+    """
+    # Get the (real-valued) critical points
+    crit = poly.deriv().r 
+    r_crit = crit[crit.imag == 0].real
+
+    # Remove points outside of search_range, if given
+    if search_range is not None:
+        r_crit = r_crit[(r_crit > search_range[0]) & (r_crit < search_range[1])]
+
+    test = poly.deriv(2)(r_crit)  # Find the second derivative at each critical point
+    return r_crit[test > 0]
