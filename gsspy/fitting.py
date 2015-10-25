@@ -11,6 +11,7 @@ import DataStructures
 from ._utils import combine_orders, read_grid_points, ensure_dir
 from .analyzer import GSSP_Analyzer
 import logging
+import glob
 
 home = os.environ['HOME']
 GSSP_EXE = '{}/Applications/GSSP/GSSP_single/GSSP_single'.format(home)
@@ -60,6 +61,8 @@ class GSSP_Fitter(object):
         orders = self._read_fits_file(filename)
         combined = combine_orders(orders)
 
+        #TODO: Cross-correlate the data to get it close. GSSP might have trouble with huge RVs...
+
         # Get the object name/date
         header = fits.getheader(filename)
         star = header['OBJECT']
@@ -96,12 +99,22 @@ class GSSP_Fitter(object):
         """
         Coarsely fit the parameters Teff, log(g), and [Fe/H].
         """
-        # First, make the input file for GSSP
+        # First, make sure the inputs are reasonable.
+        teff_step = max(teff_step, self.teff_minstep)
+        logg_step = max(logg_step, self.logg_minstep)
+        feh_step = max(feh_step, self.feh_minstep)
+        vsini_step = max(vsini_step, self.vsini_minstep)
+        vmicro_step = max(vmicro_step, self.vmicro_minstep)
         teff_lims = (min(teff_lims), max(teff_lims))
         logg_lims = (min(logg_lims), max(logg_lims))
         feh_lims = (min(feh_lims), max(feh_lims))
         vsini_lims = (min(vsini_lims), max(vsini_lims))
         vmicro_lims = (min(vmicro_lims), max(vmicro_lims))
+        teff_lims, logg_lims, feh_lims = self._check_grid_limits(teff_lims,
+                                                                 logg_lims,
+                                                                 feh_lims)
+
+        # Make the input file for GSSP
         inp_file=self._make_input_file(teff_lims=teff_lims, teff_step=teff_step, 
                               logg_lims=logg_lims, logg_step=logg_step,
                               feh_lims=feh_lims, feh_step=feh_step, 
@@ -117,7 +130,8 @@ class GSSP_Fitter(object):
         # Move the output directory to a new name that won't be overridden
         output_dir = '{}_output'.format(self.output_basename)
         ensure_dir(output_dir)
-        subprocess.check_call(['mv', 'output_files/*', '{}/'.format(output_dir)])
+        for f in glob.glob('output_files/*'):
+            subprocess.check_call(['mv', f, '{}/'.format(output_dir)])
         return
 
 
@@ -163,23 +177,6 @@ class GSSP_Fitter(object):
         =========
         A pd.Series object with the best parameters 
         """
-        # Check that the inputs are reasonable
-        teff_lims, teff_step = self._check_grid(teff_lims,
-                                                teff_step,
-                                                self.teff_minstep)
-        logg_lims, logg_step = self._check_grid(logg_lims,
-                                                logg_step,
-                                                self.logg_minstep)
-        feh_lims, feh_step = self._check_grid(feh_lims,
-                                              feh_step,
-                                              self.feh_minstep)
-        vsini_lims, vsini_step = self._check_grid(vsini_lims,
-                                                  vsini_step,
-                                                  self.vsini_minstep)
-        vmicro_lims, vmicro_step = self._check_grid(vmicro_lims,
-                                                    vmicro_step,
-                                                    self.vmicro_minstep)
-
         # Run GSSP
         self._run_gssp(teff_lims=teff_lims, teff_step=teff_step, 
                        logg_lims=logg_lims, logg_step=logg_step,
@@ -203,15 +200,15 @@ class GSSP_Fitter(object):
         # best solution and fit again
         teff_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_Teff'],
                                              upper=best_pars['1sig_CI_upper_Teff'],
-                                             self.grid.teff)
+                                             values=self.grid.teff)
         logg_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_logg'],
                                              upper=best_pars['1sig_CI_upper_logg'],
-                                             self.grid.logg)
+                                             values=self.grid.logg)
         feh_lims = self._get_refined_limits(lower=best_pars['1sig_CI_lower_feh'],
                                             upper=best_pars['1sig_CI_upper_feh'],
-                                            self.grid.feh)
-        vsini_lower = best_pars.best_vsini*(1-1.5) + 1.5*best_pars.1sig_CI_lower_vsini
-        vsini_upper = best_pars.best_vsini*(1-1.5) + 1.5*best_pars.1sig_CI_upper_vsini
+                                            values=self.grid.feh)
+        vsini_lower = best_pars.best_vsini*(1-1.5) + 1.5*best_pars['1sig_CI_lower_vsini']
+        vsini_upper = best_pars.best_vsini*(1-1.5) + 1.5*best_pars['1sig_CI_upper_vsini']
         vsini_lims = (max(10, vsini_lower), min(400, vsini_upper))
         vsini_step = max(self.vsini_minstep, (vsini_lims[1] - vsini_lims[0])/10)
         vmicro_lims = (best_pars.best_vmicro, best_pars.best_vmicro)
@@ -241,14 +238,68 @@ class GSSP_Fitter(object):
 
         return best_pars
 
+    
+    def _check_grid_limits(self, teff_lims, logg_lims, feh_lims):
+        df = self.gssp_gridpoints[['teff', 'logg', 'feh']].drop_duplicates()
 
+        # First, check if the limits are do-able
+        lower = df.loc[(df.teff <= teff_lims[0]) & 
+                       (df.logg <= logg_lims[0]) &
+                       (df.feh <= feh_lims[0])]
+        upper = df.loc[(df.teff >= teff_lims[1]) & 
+                       (df.logg >= logg_lims[1]) &
+                       (df.feh >= feh_lims[1])]
+        if len(upper) >= 1 and len(lower) >= 1:
+            return teff_lims, logg_lims, feh_lims
+        
+        # If we get here, there is a problem...
+        # Check temperature first:
+        if not (len(df.loc[df.teff <= teff_lims[0]]) >= 1 and 
+                len(df.loc[df.teff >= teff_lims[1]]) >= 1):
+            # Temperature grid is no good.
+            low_teff, high_teff = df.teff.min(), df.teff.max()
+            print('The temperature grid is not available in the model library!')
+            print('You wanted temperatures from {} - {}'.format(*teff_lims))
+            print('The model grid extends from {} - {}'.format(low_teff, high_teff))
+            new_teff_lims = (max(low_teff, teff_lims[0]),
+                             min(high_teff, teff_lims[1]))
+            print('Resetting temperature limits to {} - {}'.format(*new_teff_lims))
+            return self._check_grid_limits(new_teff_lims, logg_lims, feh_lims)
 
+        # Check log(g) next:
+        teff_df = df.loc[(df.teff >= teff_lims[0]) & (df.teff <= teff_lims[1])]
+        if not (len(teff_df.loc[df.logg <= logg_lims[0]]) >= 1 and 
+                len(teff_df.loc[df.logg >= logg_lims[1]]) >= 1):
+            # Temperature grid is no good.
+            low_logg, high_logg = df.logg.min(), df.logg.max()
+            print('The log(g) grid is not available in the model library!')
+            print('You wanted log(g) from {} - {}'.format(*logg_lims))
+            print('The model grid extends from {} - {}'.format(low_logg, high_logg))
+            new_logg_lims = (max(low_logg, logg_lims[0]),
+                             min(high_logg, logg_lims[1]))
+            print('Resetting log(g) limits to {} - {}'.format(*new_logg_lims))
+            return self._check_grid_limits(teff_lims, new_logg_lims, feh_lims)
 
-    def _check_grid(self, lims, step, minstep):
-        """ Check that the input grid is calculable
-        TODO: Check the grid limits!
-        """
-        return lims, max(step, minstep)
+        # Finally, check [Fe/H]:
+        subset_df = df.loc[(df.teff >= teff_lims[0]) & 
+                           (df.teff <= teff_lims[1]) *
+                           (df.logg >= logg_lims[0]) &
+                           (df.logg <= logg_lims[1])]
+        if not (len(subset_df.loc[df.feh <= feh_lims[0]]) >= 1 and 
+                len(subset_df.loc[df.feh >= feh_lims[1]]) >= 1):
+            # Temperature grid is no good.
+            low_feh, high_feh = df.feh.min(), df.feh.max()
+            print('The [Fe/H] grid is not available in the model library!')
+            print('You wanted [Fe/H] from {} - {}'.format(*feh_lims))
+            print('The model grid extends from {} - {}'.format(low_feh, high_feh))
+            new_feh_lims = (max(low_feh, feh_lims[0]),
+                            min(high_feh, feh_lims[1]))
+            print('Resetting [Fe/H] limits to {} - {}'.format(*new_feh_lims))
+            return self._check_grid_limits(teff_lims, logg_lims, new_feh_lims)
+
+        # We should never get here
+        raise ValueError('Something weird happened while checking limits!')
+
 
 
     def _get_refined_limits(lower, upper, values):
