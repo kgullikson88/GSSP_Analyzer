@@ -93,7 +93,7 @@ class GSSP_Analyzer(object):
                 chi2_vals = chi2_fcn(minimum)
                 minimum = minimum[np.argmin(chi2_vals)]
             else:
-                minimum = par_dependence.sort_values(by='chi2')['logg'].values[0]
+                minimum = par_dependence.sort_values(by='chi2')[par].values[0]
 
             # Plot
             fig, ax = plt.subplots(1, 1)
