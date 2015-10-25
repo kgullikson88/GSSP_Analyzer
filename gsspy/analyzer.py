@@ -78,6 +78,7 @@ class GSSP_Analyzer(object):
             par_dependence = self.chi2_df[cond][[par, 'chi2']]
             if len(par_dependence) < 2:
                 continue
+            logging.debug(par_dependence)
 
             # Fit the dependence to a polynomial
             polypars = np.polyfit(par_dependence[par], 
@@ -88,9 +89,11 @@ class GSSP_Analyzer(object):
             minimum = get_minimum(chi2_fcn, search_range=roots)
             if len(minimum) == 1:
                 minimum = minimum[0]
-            else:
+            elif len(minimum) > 1:
                 chi2_vals = chi2_fcn(minimum)
                 minimum = minimum[np.argmin(chi2_vals)]
+            else:
+                minimum = par_dependence.sort_values(by='chi2')['logg'].values[0]
 
             # Plot
             fig, ax = plt.subplots(1, 1)
